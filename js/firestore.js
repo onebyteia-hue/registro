@@ -60,16 +60,19 @@ export async function fetchPassRegistro(){
 }
 
 export async function queryPadrinos(){
-  // Solo los que son padrino y tienen estadoPadrino definido
   const q = query(
     collection(db, USERS),
-    where("padrino", "==", true)
+    where("rol", "==", "padrino")
   );
+
   const snap = await getDocs(q);
-  const out = [];
-  snap.forEach(d => out.push({ id: d.id, ...d.data() }));
-  return out;
+
+  return snap.docs.map(d => ({
+    id: d.id,
+    ...d.data()
+  }));
 }
+
 
 export function nowTs(){
   return Timestamp.now();

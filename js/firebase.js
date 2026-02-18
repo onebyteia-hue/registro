@@ -6,6 +6,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/fireba
 import {
   getAuth,
   GoogleAuthProvider,
+  signInWithRedirect,
+  getRedirectResult,
   signInWithPopup,
   signOut,
   onAuthStateChanged
@@ -41,6 +43,17 @@ export async function loginGoogle() {
   const res = await signInWithPopup(auth, googleProvider);
   return res.user;
 }
+
+
+
+export async function consumeRedirectResult() {
+  try {
+    await getRedirectResult(auth);
+  } catch (e) {
+    console.warn("Redirect result error:", e);
+  }
+}
+
 
 export async function logout() {
   await signOut(auth);

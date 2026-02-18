@@ -1,3 +1,8 @@
+
+import { consumeRedirectResult } from "./firebase.js";
+
+consumeRedirectResult();
+
 import { onAuth, loginGoogle, logout, uploadPadrinoPhoto } from "./firebase.js";
 
 import { state, setUser, setProfile, clearProfile } from "./state.js";
@@ -34,6 +39,9 @@ import {
 const $ = (id) => document.getElementById(id);
 
 bindModalEvents();
+
+
+
 
 /* ---------- ROUTER ---------- */
 function nav(path) {
@@ -233,12 +241,42 @@ async function showRulesModalIfNeeded() {
     title: "Reglas del juego",
     bodyHTML: `
       <div class="notice">
-        <b>Importante:</b> Respeta a todos, no hagas spam de reservas, y recuerda que una reserva dura <b>30 minutos</b>.
-        <br><br>
-        Si un padrino está reservado, espera: <i>“Puede que no lo ocupen; espera por si se vuelve disponible.”</i>
-      </div>
-      <div class="hr"></div>
-      <div class="subtle">Al aceptar, confirmas que estás de acuerdo con estas reglas.</div>
+      <b>Importante:</b> Lee los términos y condiciones.
+      <br><br>
+      Si un padrino está <b>Reservado</b>, espera con calma: <i>“Puede que no lo ocupen; espera por si se vuelve disponible.”</i>
+    </div>
+
+    <div class="hr"></div>
+
+    <h4 style="margin:10px 0 6px;">👶 Reglas para Ahijados</h4>
+    <div class="subtle" style="line-height:1.45;">
+      • Puedes <b>ver a todos los padrinos</b> y sus perfiles, especialmente los que estén <b>Disponibles</b>.<br>
+      • Puedes <b>reservar hasta 2 padrinos</b> a la vez. Cada reserva dura <b>30 minutos</b>.<br>
+      • Estados del padrino:
+      <ul style="margin:6px 0 0 18px; padding:0;">
+        <li><b>Disponible:</b> puedes reservarlo.</li>
+        <li><b>Reservado:</b> <b>no se puede reservar</b>. Está en espera para otro ahijado (puede liberarse si vence el tiempo).</li>
+        <li><b>No disponible:</b> ya fue ocupado/confirmado y <b>ya no está en juego</b>.</li>
+      </ul>
+      • Tus padrinos reservados se muestran siempre en el <b>encabezado</b> (arriba) para que los identifiques rápido.
+    </div>
+
+    <div class="hr"></div>
+
+    <h4 style="margin:10px 0 6px;">🧑‍🤝‍🧑 Reglas para Padrinos</h4>
+    <div class="subtle" style="line-height:1.45;">
+      • Como padrino puedes <b>ver perfiles</b>, pero <b>no puedes reservar</b> ni realizar acciones de “elección”.<br>
+      • Al ingresar por primera vez, debes <b>llenar tu formulario</b> para estar activo en la lista.<br>
+      • El formulario es rápido: tiene <b>solo 3 opciones</b> a completar (tal como aparece en pantalla).<br>
+      • Si quedas <b>Reservado</b>, en el <b>encabezado</b> verás el <b>nombre de tu posible ahijado</b> mientras dure la reserva.<br>
+      • Si tu reserva vence o se libera, tu estado puede volver a <b>Disponible</b>.
+    </div>
+
+    <div class="hr"></div>
+
+    <div class="subtle">
+      Al presionar <b>“Acepto”</b>, confirmas que estás de acuerdo con estas reglas y el funcionamiento de la app.
+    </div>
     `,
     okText: "Acepto",
     cancelText: null,
@@ -427,9 +465,17 @@ function renderBuscador() {
     renderPadrinosList();
     if (openProfileId) openProfile(openProfileId);
   })().catch((err) => {
-    list.innerHTML = "";
-    toastInline(msg, "No se pudo cargar padrinos.", "danger");
-  });
+  console.error("queryPadrinos failed:", err);
+
+  list.innerHTML = "";
+
+  toastInline(
+    msg,
+    err?.message || "No se pudo cargar padrinos.",
+    "danger"
+  );
+});
+
 
   $("qSearch").addEventListener("input", renderPadrinosList);
   $("qSort").addEventListener("change", renderPadrinosList);
@@ -489,6 +535,13 @@ function renderBuscador() {
           : p.estadoPadrino === "reservado"
             ? "Reservado"
             : "No disponible";
+            const stateClass =
+  p.estadoPadrino === "disponible"
+    ? "statuspill statuspill--ok"
+    : p.estadoPadrino === "reservado"
+      ? "statuspill statuspill--warn"
+      : "statuspill statuspill--danger";
+
 
       const img =
         p.fotoURL && p.fotoURL.startsWith("http")
@@ -498,18 +551,24 @@ function renderBuscador() {
       const card = document.createElement("div");
       card.className = "card";
       card.innerHTML = `
-        <img class="card__img" src="${img}" alt="">
-        <div class="card__meta">
-          <div class="card__title">${escapeHtml(full || "—")}</div>
-          <div class="card__sub">${escapeHtml(p.apodo ? `@${p.apodo}` : "Sin apodo")} · <b>${stateText}</b></div>
-          <div class="tagrow">
-            <span class="tag">🍻 ${num(getScore(p, "alcoholico"))}</span>
-            <span class="tag">🗣️ ${num(getScore(p, "chismoso"))}</span>
-            <span class="tag">📚 ${num(getScore(p, "estudioso"))}</span>
-            <span class="tag">🎉 ${num(getScore(p, "fiestero"))}</span>
-          </div>
-        </div>
-      `;
+  <img class="card__img" src="${img}" alt="">
+  <div class="card__meta">
+    <div class="card__top">
+      <span class="${stateClass}">${stateText}</span>
+    </div>
+
+    <div class="card__title">${escapeHtml(full || "—")}</div>
+    <div class="card__sub">${escapeHtml(p.apodo ? `@${p.apodo}` : "Sin apodo")}</div>
+
+    <div class="tagrow">
+      <span class="tag">🍻 ${num(getScore(p, "alcoholico"))}</span>
+      <span class="tag">🗣️ ${num(getScore(p, "chismoso"))}</span>
+      <span class="tag">📚 ${num(getScore(p, "estudioso"))}</span>
+      <span class="tag">🎉 ${num(getScore(p, "fiestero"))}</span>
+    </div>
+  </div>
+`;
+
       card.addEventListener("click", () => openProfile(p.id));
       list.appendChild(card);
     }
@@ -1399,6 +1458,7 @@ function renderAdmin() {
     list.innerHTML = "";
 
     let arr = [...data];
+
     if (q) {
       arr = arr.filter((u) =>
         (u.nombreCompleto || "").toLowerCase().includes(q),
