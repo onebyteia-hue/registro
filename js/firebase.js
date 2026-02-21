@@ -1,7 +1,3 @@
-
-
-
-
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
 import {
   getAuth,
@@ -32,6 +28,10 @@ const firebaseConfig = {
   measurementId: "G-N1FYQ17Z90"
 };
 
+
+
+
+
 export const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 export const auth = getAuth(app);
@@ -39,21 +39,40 @@ export const storage = getStorage(app);
 
 export const googleProvider = new GoogleAuthProvider();
 
+
+/**
+ * ✅ Login robusto:
+ * - Intenta popup
+ * - Si Chrome/COOP lo rompe, hace fallback a redirect (lo más estable)
+ */
 export async function loginGoogle() {
-  const res = await signInWithPopup(auth, googleProvider);
-  return res.user;
+  try {
+    const res = await signInWithPopup(auth, googleProvider);
+    return res.user;
+  } catch (e) {
+    console.warn("Popup login falló, usando redirect:", e?.code || e);
+
+    // Fallback a redirect en casos típicos:
+    // auth/popup-blocked, auth/popup-closed-by-user,
+    // auth/operation-not-supported-in-this-environment, etc.
+    await signInWithRedirect(auth, googleProvider);
+
+    // Con redirect, aquí no retorna porque la página recarga.
+    return null;
+  }
 }
 
-
-
+/**
+ * ✅ Consumir resultado del redirect al cargar la app
+ * (no pasa nada si no vienes de redirect)
+ */
 export async function consumeRedirectResult() {
   try {
     await getRedirectResult(auth);
   } catch (e) {
-    console.warn("Redirect result error:", e);
+    console.warn("Redirect result error:", e?.code || e);
   }
 }
-
 
 export async function logout() {
   await signOut(auth);

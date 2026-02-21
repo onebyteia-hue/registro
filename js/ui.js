@@ -47,6 +47,11 @@ export function setView(html){
 let modalResolve = null;
 let modalReject = null;
 
+// Para que el botón Atrás (celular/navegador) cierre el modal
+let modalPopHandler = null;
+let modalHistoryPushed = false;
+let ignoreNextPop = false;
+
 export function openModal({title, bodyHTML, okText="Aceptar", cancelText=null}){
   $("modalTitle").textContent = title || "Aviso";
   $("modalBody").innerHTML = bodyHTML || "";
@@ -59,17 +64,48 @@ export function openModal({title, bodyHTML, okText="Aceptar", cancelText=null}){
   $("modalOverlay").classList.remove("hidden");
   $("modalOverlay").setAttribute("aria-hidden", "false");
 
+  // Empuja un estado al historial para que BACK cierre el modal (solo si no hay otro modal abierto)
+  if (!modalHistoryPushed){
+    modalHistoryPushed = true;
+    history.pushState({ __modal: true }, "");
+  }
+
+  // Handler de BACK (popstate)
+  if (!modalPopHandler){
+    modalPopHandler = () => {
+      if (ignoreNextPop) { ignoreNextPop = false; return; }
+      if (modalReject) modalReject(new Error("back"));
+      closeModal(true); // true => viene desde popstate
+    };
+    window.addEventListener("popstate", modalPopHandler);
+  }
+
   return new Promise((resolve, reject) => {
     modalResolve = resolve;
     modalReject = reject;
   });
 }
 
-export function closeModal(){
+export function closeModal(fromPop=false){
   $("modalOverlay").classList.add("hidden");
   $("modalOverlay").setAttribute("aria-hidden", "true");
   modalResolve = null;
   modalReject = null;
+
+  // Quitar listener
+  if (modalPopHandler){
+    window.removeEventListener("popstate", modalPopHandler);
+    modalPopHandler = null;
+  }
+
+  // Si cerramos por botones (no por BACK), removemos el state modal del historial
+  if (modalHistoryPushed){
+    modalHistoryPushed = false;
+    if (!fromPop){
+      ignoreNextPop = true;
+      history.back();
+    }
+  }
 }
 
 export function bindModalEvents(){

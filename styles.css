@@ -110,10 +110,11 @@ body{
   border: 1px solid var(--stroke2);
   box-shadow: var(--shadow2);
   border-radius: var(--radius);
-  overflow:hidden;
+  overflow: visible; /* ✅ antes: hidden (recortaba cards en móvil) */
 }
 .panel--header{ padding: 16px; }
-.panel--main{ padding: 16px; min-height: 62vh; }
+
+.panel--main{ padding: 18px; min-height: 62vh; }
 
 /* Header grid */
 .headergrid{
@@ -262,10 +263,10 @@ textarea{ min-height: 120px; resize: vertical; }
 .card{
   grid-column: span 12;
 
-  width: var(--cardW);
-  min-height: var(--cardH);
-  margin: 0 auto;
-
+  width: 100%;          /* ✅ ocupa el ancho REAL del contenedor */
+max-width: 420px;     /* ✅ límite “bonito” en escritorio */
+min-height: var(--cardH);
+margin: 10px auto;    /* ✅ margen vertical para que no se pegue */
   position: relative;
   overflow:hidden;
 
@@ -613,4 +614,29 @@ textarea{ min-height: 120px; resize: vertical; }
 }
 .card{
   position: relative;
+}
+@media (max-width: 480px){
+  .shell{ padding: 0 10px; }
+
+  .panel--main{ padding: 12px; }
+
+  .card{
+    margin: 12px auto;
+    border-radius: 24px;
+  }
+
+  .card__meta{
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
+    border-radius: 18px;
+  }
+
+  .card > .card__top{
+    top: 10px;
+    left: 10px;
+  }
+
+  .card__title{ font-size: 18px; }
+  .card__sub{ font-size: 12.5px; }
 }

@@ -36,20 +36,48 @@ import {
   adminSetAhijadoDisponible,
 } from "./firestore.js";
 
+import { doc, updateDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+import { db } from "./firebase.js";
+
+async function saveRulesAccepted(uid) {
+  const ref = doc(db, "user_bautizo", uid);
+  await updateDoc(ref, {
+    reglasAceptadas: true,
+    reglasAceptadasAt: serverTimestamp()
+  });
+}
+
+
 const $ = (id) => document.getElementById(id);
 
 bindModalEvents();
-
+// ✅ si venimos de signInWithRedirect, esto finaliza el login
+consumeRedirectResult();
 
 
 
 /* ---------- ROUTER ---------- */
 function nav(path) {
+  if (!path) path = "/";
+  if (!path.startsWith("/")) path = "/" + path;
+
+  const next = "#" + path;
+  const current = location.hash || "#/";
+
+  // Si ya estamos en el mismo hash, forzamos re-render
+  if (current === next) {
+    route();
+    return;
+  }
+
   location.hash = path;
 }
 
 function route() {
-  const hash = location.hash.replace("#", "") || "/";
+  const raw = (location.hash || "#/").slice(1); // sin '#'
+  const [hashPath, hashQs] = raw.split("?");
+  const hash = hashPath || "/";
+  const query = new URLSearchParams(hashQs || "");
 
   if (!state.user) {
     setFabVisibility({
@@ -96,9 +124,15 @@ function route() {
     case "/buscador":
       renderBuscador();
       break;
-    case "/perfil":
-      renderBuscador();
-      break; // perfil se abre por param ?id=
+    case "/perfil": {
+      const id = query.get("id");
+      if (!id) {
+        nav("/buscador");
+        return;
+      }
+      renderBuscador(); // renderBuscador lee ?id desde location.hash y abre el perfil
+      break;
+    }
     case "/registro":
       renderRegistro();
       break;
@@ -232,65 +266,70 @@ function refreshHeader() {
   $("fabMe").onclick = () => nav("/miperfil");
 }
 
-/* ---------- MODAL RULES ---------- */
+
+
 async function showRulesModalIfNeeded() {
   const p = state.profile;
   if (!p || p.reglasAceptadas) return;
 
-  const ok = await openModal({
-    title: "Reglas del juego",
-    okText: "Acepto",
-    cancelText: null,
-    bodyHTML: `
-      <div class="notice">
-      <b>Importante:</b> Lee los términos y condiciones.
-      <br><br>
-      
-    </div>
+  try {
+    const ok = await openModal({
+      title: "Reglas del juego",
+      okText: "Acepto",
+      cancelText: null,
+      bodyHTML: `
+        <div class="notice">
+          <b>Importante:</b> Lee los términos y condiciones.
+        </div>
 
-    <div class="hr"></div>
+        <div class="hr"></div>
 
-    <h4 style="margin:10px 0 6px;">👶 Reglas para Ahijados</h4>
-    <div class="subtle" style="line-height:1.45;">
-      • Puedes <b>ver a todos los padrinos</b> y sus perfiles, especialmente los que estén <b>Disponibles</b>.<br>
-      • Puedes <b>reservar hasta 2 padrinos</b> a la vez. Cada reserva dura <b>30 minutos</b>.<br>
-      • Estados del padrino:
-      <ul style="margin:6px 0 0 18px; padding:0;">
-        <li><b>Disponible:</b> puedes reservarlo.</li>
-        <li><b>Reservado:</b> <b>no se puede reservar</b>. Está en espera para otro ahijado (puede liberarse si vence el tiempo).</li>
-        <li><b>No disponible:</b> ya fue ocupado/confirmado y <b>ya no está en juego</b>.</li>
-      </ul>
-      • Tus padrinos reservados se muestran siempre en el <b>encabezado</b> (arriba) para que los identifiques rápido.
-    </div>
+        <h4 style="margin:10px 0 6px;">👶 Reglas para Ahijados</h4>
+        <div class="subtle" style="line-height:1.45;">
+          • Puedes <b>ver a todos los padrinos</b> y sus perfiles, especialmente los que estén <b>Disponibles</b>.<br>
+          • Puedes <b>reservar hasta 2 padrinos</b> a la vez. Cada reserva dura <b>30 minutos</b>.<br>
+          • Estados del padrino:<br>
+          &nbsp;&nbsp;• <b>Disponible</b>: puedes reservarlo.<br>
+          &nbsp;&nbsp;• <b>Reservado</b>: <b>no se puede reservar</b>. Está en espera para otro ahijado (puede liberarse si vence el tiempo).<br>
+          &nbsp;&nbsp;• <b>No disponible</b>: ya fue ocupado/confirmado y <b>ya no está en juego</b>.<br>
+          • Tus padrinos reservados se muestran siempre en el encabezado (arriba) para que los identifiques rápido.
+        </div>
 
-    <div class="hr"></div>
+        <div class="hr"></div>
 
-    <h4 style="margin:10px 0 6px;">🧑‍🤝‍🧑 Reglas para Padrinos</h4>
-    <div class="subtle" style="line-height:1.45;">
-      • Como padrino puedes <b>ver perfiles</b>, pero <b>no puedes reservar</b> ni realizar acciones de “elección”.<br>
-      • Al ingresar por primera vez, debes <b>llenar tu formulario</b> para estar activo en la lista.<br>
-      • El formulario es rápido: tiene <b>solo 3 opciones</b> a completar (tal como aparece en pantalla).<br>
-      • Si quedas <b>Reservado</b>, en el <b>encabezado</b> verás el <b>nombre de tu posible ahijado</b> mientras dure la reserva.<br>
-      • Si tu reserva vence o se libera, tu estado puede volver a <b>Disponible</b>.
-    </div>
+        <h4 style="margin:10px 0 6px;">👨‍👧 Reglas para Padrinos</h4>
+        <div class="subtle" style="line-height:1.45;">
+          • Como padrino puedes <b>ver perfiles</b>, pero <b>no puedes reservar</b> ni realizar acciones de “elección”.<br>
+          • Al ingresar por primera vez, debes <b>llenar tu formulario</b> para estar activo en la lista.<br>
+          • El formulario es rápido: tiene solo <b>3 opciones</b> a completar (tal como aparece en pantalla).<br>
+          • Si quedas <b>Reservado</b>, en el encabezado verás el nombre de tu posible ahijado mientras dure la reserva.<br>
+          • Si tu reserva vence o se libera, tu estado puede volver a <b>Disponible</b>.
+        </div>
 
-    <div class="hr"></div>
+        <div class="hr"></div>
 
-    <div class="subtle">
-      Al presionar <b>“Acepto”</b>, confirmas que estás de acuerdo con estas reglas y el funcionamiento de la app.
-    </div>
-    `,
-    
-  });
+        <div class="subtle" style="margin-top:10px;">
+          Al presionar <b>“Acepto”</b>, confirmas que estás de acuerdo con estas reglas y el funcionamiento de la app.
+        </div>
+      `
+    });
 
-  if (ok) {
-    await acceptRules(state.user.uid);
-    const updated = await getMyProfile(state.user.uid);
-    setProfile(updated.data);
-    refreshHeader();
+    // Si por algún motivo devuelve false (no debería porque no hay cancel),
+    // simplemente no hacemos nada.
+    if (!ok) return;
+
+    // ✅ Guardar aceptación de reglas
+    await saveRulesAccepted(state.user.uid);
+
+    // ✅ Actualizar estado local para evitar reabrir modal
+    state.profile = { ...state.profile, reglasAceptadas: true };
+    paintProfileUI(state.profile);
+  } catch (err) {
+    // ✅ Si cierran con X o con BACK, openModal rechaza.
+    // No queremos que eso explote en consola.
+    console.warn("Modal de reglas cerrado sin aceptar:", err?.message || err);
   }
 }
-
 /* ---------- VIEWS ---------- */
 function renderWelcome() {
   setView(`
@@ -570,7 +609,7 @@ function renderBuscador() {
   </div>
 `;
 
-      card.addEventListener("click", () => openProfile(p.id));
+      card.addEventListener("click", () => nav(`/perfil?id=${encodeURIComponent(p.id)}`));
       list.appendChild(card);
     }
   }
@@ -667,15 +706,12 @@ ${renderCuestionario(p)}
       </div>
     `);
     const back = document.getElementById("btnBack");
-if (back) back.onclick = () => {
-  // vuelve al buscador con la lista/card pequeñita
-  location.hash = "#/buscador";   // o nav("/buscador") si tienes nav()
-};
+    if (back) back.onclick = () => { if (history.length > 1) history.back(); else nav("/buscador"); };
 
 
     
 
-    $("btnBack").onclick = () => nav("/buscador");
+    $("btnBack").onclick = () => { if (history.length > 1) history.back(); else nav("/buscador"); };
     $("btnCopyWait").onclick = async () => {
       await openModal({
         title: "Si está reservado…",
