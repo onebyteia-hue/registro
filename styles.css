@@ -112,9 +112,9 @@ body{
   border-radius: var(--radius);
   overflow: visible; /* ✅ antes: hidden (recortaba cards en móvil) */
 }
-.panel--header{ padding: 16px; }
+.panel--header{ padding: 16px; border-radius: var(--radius);}
 
-.panel--main{ padding: 18px; min-height: 62vh; }
+.panel--main{ padding: 22px; min-height: 62vh; border-radius: 0px; }
 
 /* Header grid */
 .headergrid{
@@ -152,7 +152,7 @@ body{
 }
 .pill{
   padding: 8px 11px;
-  border-radius: 999px;
+  border-radius: 99px;
   background: rgba(18,20,26,.05);
   border: 1px solid rgba(18,20,26,.08);
   font-size: 12.5px;
@@ -270,7 +270,7 @@ margin: 10px auto;    /* ✅ margen vertical para que no se pegue */
   position: relative;
   overflow:hidden;
 
-  border-radius: 28px;
+  border-radius: 2px;
   border: 1px solid rgba(18,20,26,.10);
   background: rgba(255,255,255,.78);
   box-shadow: var(--shadow);
@@ -289,7 +289,7 @@ margin: 10px auto;    /* ✅ margen vertical para que no se pegue */
   inset: 0;
   width: 100%;
   height: 100%;
-  border-radius: 28px;
+  border-radius: 2px;
   object-fit: cover;
   background: rgba(18,20,26,.04);
   filter: saturate(1.03) contrast(1.02);
@@ -618,7 +618,7 @@ margin: 10px auto;    /* ✅ margen vertical para que no se pegue */
 @media (max-width: 480px){
   .shell{ padding: 0 10px; }
 
-  .panel--main{ padding: 12px; }
+  .panel--main{ padding: 22px; }
 
   .card{
     margin: 12px auto;
