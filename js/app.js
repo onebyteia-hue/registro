@@ -239,11 +239,13 @@ async function showRulesModalIfNeeded() {
 
   const ok = await openModal({
     title: "Reglas del juego",
+    okText: "Acepto",
+    cancelText: null,
     bodyHTML: `
       <div class="notice">
       <b>Importante:</b> Lee los términos y condiciones.
       <br><br>
-      Si un padrino está <b>Reservado</b>, espera con calma: <i>“Puede que no lo ocupen; espera por si se vuelve disponible.”</i>
+      
     </div>
 
     <div class="hr"></div>
@@ -278,8 +280,7 @@ async function showRulesModalIfNeeded() {
       Al presionar <b>“Acepto”</b>, confirmas que estás de acuerdo con estas reglas y el funcionamiento de la app.
     </div>
     `,
-    okText: "Acepto",
-    cancelText: null,
+    
   });
 
   if (ok) {
