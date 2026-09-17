@@ -34,7 +34,13 @@ import {
   adminSetPadrinoDisponible,
   adminSetAhijadoNoDisponible,
   adminSetAhijadoDisponible,
+  adminListOfficialData,
+  adminAcceptReservation,
+  acceptPadrinoReservation,
+  adminDeleteAcceptance,
 } from "./firestore.js";
+
+import { jsPDF } from "https://cdn.jsdelivr.net/npm/jspdf@2.5.2/+esm";
 
 import { doc, updateDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 import { db } from "./firebase.js";
@@ -79,12 +85,25 @@ function route() {
   const hash = hashPath || "/";
   const query = new URLSearchParams(hashQs || "");
 
+  if (!state.user && hash === "/buscador") {
+    renderBuscador(true);
+    return;
+  }
+  if (!state.user && hash === "/estadisticas") {
+    renderEstadisticas(true);
+    return;
+  }
+  if (!state.user && hash === "/ahijados") {
+    renderAhijados(true);
+    return;
+  }
   if (!state.user) {
     setFabVisibility({
       showDock: false,
       showAdmin: false,
       showRegister: false,
       showMe: false,
+      showAhijados: true,
     });
     renderWelcome();
     return;
@@ -124,6 +143,12 @@ function route() {
     case "/buscador":
       renderBuscador();
       break;
+    case "/estadisticas":
+      renderEstadisticas();
+      break;
+    case "/ahijados":
+      renderAhijados();
+      break;
     case "/perfil": {
       const id = query.get("id");
       if (!id) {
@@ -141,6 +166,9 @@ function route() {
       break;
     case "/admin":
       renderAdmin();
+      break;
+    case "/admin-oficial":
+      renderAdminOfficial();
       break;
     default:
       nav("/buscador");
@@ -160,10 +188,13 @@ $("btnLogin").addEventListener("click", async () => {
 $("btnLogout").addEventListener("click", async () => {
   await logout();
 });
+$("btnHome").addEventListener("click", () => nav("/buscador"));
+$("btnStatsFloating").addEventListener("click", () => nav("/estadisticas"));
 
 onAuth(async (user) => {
   setUser(user || null);
   setTopAuthUI(!!user);
+  $("btnLogin").classList.toggle("hidden", !!user);
 
   if (!user) {
     clearProfile();
@@ -204,6 +235,7 @@ onAuth(async (user) => {
     // Ahijado
     estadoApadrinado: "disponible",
     reservasActivas: [],
+    padrinosAceptados: [],
   };
 
   const prof = await ensureProfile(user.uid, defaults);
@@ -235,16 +267,21 @@ function refreshHeader() {
   if (!p) {
     setHeaderList([], "Reservas");
   } else if (p.rol === "ahijado") {
-    const items = (p.reservasActivas || []).map((r) => {
+    const reservas = (p.reservasActivas || []).map((r) => {
       const ms = r.expiresAt ? r.expiresAt.toMillis() - Date.now() : 0;
       return `${r.padrinoNombreCompleto || "—"} · ${fmtRemaining(ms)}`;
     });
-    setHeaderList(items, "Tus padrinos (activos)");
+    const aceptados = (p.padrinosAceptados || []).map((r) =>
+      `${r.padrinoNombreCompleto || "—"} · Aceptado`,
+    );
+    setHeaderList([...reservas, ...aceptados], "Tus padrinos");
   } else if (p.rol === "padrino") {
-    if (
-      p.estadoPadrino !== "disponible" &&
-      p.reservaActiva?.ahijadoNombreCompleto
-    ) {
+    if (p.aceptacionActiva?.ahijadoNombreCompleto) {
+      setHeaderList(
+        [`Ahijado: ${p.aceptacionActiva.ahijadoNombreCompleto} · Aceptado`],
+        "Tu estado",
+      );
+    } else if (p.reservaActiva?.ahijadoNombreCompleto) {
       setHeaderList(
         [`Ahijado: ${p.reservaActiva.ahijadoNombreCompleto}`],
         "Tu estado",
@@ -252,6 +289,28 @@ function refreshHeader() {
     } else {
       setHeaderList([], "Tu estado");
     }
+    const acceptButton = $("btnAcceptReservation");
+    if (acceptButton) {
+      const hasPendingReservation = p.rol === "padrino" && p.estadoPadrino === "reservado";
+      acceptButton.classList.toggle("hidden", !hasPendingReservation);
+      acceptButton.textContent = hasPendingReservation ? "Aceptar reserva" : "";
+      acceptButton.onclick = async () => {
+        acceptButton.disabled = true;
+        try {
+          await acceptPadrinoReservation({ padrinoId: state.user.uid });
+          const updated = await getMyProfile(state.user.uid);
+          setProfile(updated.data);
+          refreshHeader();
+          route();
+        } catch (error) {
+          toastInline($("headerList"), error.message || "No se pudo aceptar la reserva.", "danger");
+          acceptButton.disabled = false;
+        }
+      };
+    }
+  } else {
+    const acceptButton = $("btnAcceptReservation");
+    if (acceptButton) acceptButton.classList.add("hidden");
   }
 
   // FABs
@@ -259,11 +318,13 @@ function refreshHeader() {
   const showAdmin = !!p.admin;
   const showRegister = p.rol === "padrino" && Number(p.editsUsed || 0) < 3;
   const showMe = p.rol === "padrino";
-  setFabVisibility({ showDock, showAdmin, showRegister, showMe });
+  const showAhijados = true;
+  setFabVisibility({ showDock, showAdmin, showRegister, showMe, showAhijados });
 
   $("fabAdmin").onclick = () => nav("/admin");
   $("fabRegister").onclick = () => nav("/registro");
   $("fabMe").onclick = () => nav("/miperfil");
+  $("fabAhijados").onclick = () => nav("/ahijados");
 }
 
 
@@ -334,6 +395,10 @@ async function showRulesModalIfNeeded() {
 function renderWelcome() {
   setView(`
     <div class="grid">
+      <div class="notice" style="grid-column:span 12;">
+        Puedes consultar las tarjetas de padrinos y las estadísticas sin registrarte.
+        <button id="btnGuestBrowse" class="btn btn--primary" type="button">Ver padrinos</button>
+      </div>
       <div class="card" style="grid-column: span 12; cursor: default;">
         <img class="card__img" alt="" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Crect width='120' height='120' rx='24' fill='rgba(255,255,255,0.12)'/%3E%3C/svg%3E"/>
         <div class="card__meta">
@@ -348,6 +413,7 @@ function renderWelcome() {
       </div>
     </div>
   `);
+  $("btnGuestBrowse").onclick = () => nav("/buscador");
 }
 
 function renderLoading(text) {
@@ -455,15 +521,20 @@ function renderIngreso() {
   });
 }
 
-function renderBuscador() {
+function renderBuscador(isGuest = false) {
   const params = new URLSearchParams(location.hash.split("?")[1] || "");
   const openProfileId = params.get("id");
 
   setView(`
     <div>
-      <div class="kicker">Buscador</div>
-      <div class="headline">Elige tu padrino</div>
-      <div class="subtle">Busca por nombre o apodo, o filtra por características.</div>
+      <div class="search-heading">
+        <div>
+          <div class="kicker">Buscador</div>
+          <div class="headline">Elige tu padrino</div>
+          <div class="subtle">Busca por nombre o apodo, o filtra por características.</div>
+        </div>
+        <button id="btnToggleView" class="btn btn--ghost view-toggle" type="button" title="Cambiar vista">☷ Lista</button>
+      </div>
 
       <div class="hr"></div>
 
@@ -493,6 +564,13 @@ function renderBuscador() {
 
   const msg = $("listMsg");
   const list = $("list");
+  let viewMode = "cards";
+  $("btnToggleView").onclick = () => {
+    viewMode = viewMode === "cards" ? "list" : "cards";
+    $("btnToggleView").textContent = viewMode === "cards" ? "☷ Lista" : "▦ Tarjetas";
+    list.classList.toggle("padrino-list-mode", viewMode === "list");
+    renderPadrinosList();
+  };
 
   (async () => {
     msg.innerHTML = "";
@@ -561,6 +639,7 @@ function renderBuscador() {
     }
 
     list.innerHTML = "";
+    list.classList.toggle("padrino-list-mode", viewMode === "list");
     if (!arr.length) {
       list.innerHTML = `<div class="notice" style="grid-column: span 12;">No hay resultados.</div>`;
       return;
@@ -575,6 +654,9 @@ function renderBuscador() {
           : p.estadoPadrino === "reservado"
             ? "Reservado"
             : "No disponible";
+      const acceptedFor = p.aceptacionActiva?.ahijadoNombreCompleto
+        ? ` · Ahijado: ${p.aceptacionActiva.ahijadoNombreCompleto}`
+        : "";
             const stateClass =
   p.estadoPadrino === "disponible"
     ? "statuspill statuspill--ok"
@@ -589,7 +671,7 @@ function renderBuscador() {
           : "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Crect width='120' height='120' rx='24' fill='rgba(255,255,255,0.12)'/%3E%3C/svg%3E";
 
       const card = document.createElement("div");
-      card.className = "card";
+      card.className = viewMode === "list" ? "card padrino-list-item" : "card";
       card.innerHTML = `
   <img class="card__img" src="${img}" alt="">
   <div class="card__meta">
@@ -598,7 +680,7 @@ function renderBuscador() {
     </div>
 
     <div class="card__title">${escapeHtml(full || "—")}</div>
-    <div class="card__sub">${escapeHtml(p.apodo ? `@${p.apodo}` : "Sin apodo")}</div>
+    <div class="card__sub">${escapeHtml((p.apodo ? `@${p.apodo}` : "Sin apodo") + acceptedFor)}</div>
 
     <div class="tagrow">
       <span class="tag">🍻 ${num(getScore(p, "alcoholico"))}</span>
@@ -609,7 +691,10 @@ function renderBuscador() {
   </div>
 `;
 
-      card.addEventListener("click", () => nav(`/perfil?id=${encodeURIComponent(p.id)}`));
+      card.addEventListener("click", () => {
+        if (state.user) nav(`/perfil?id=${encodeURIComponent(p.id)}`);
+        else openProfile(p.id);
+      });
       list.appendChild(card);
     }
   }
@@ -619,6 +704,21 @@ function renderBuscador() {
     const p = state.padrinosCache.find((x) => x.id === id);
     if (!p) {
       toastInline(msg, "No se encontró el padrino.", "danger");
+      return;
+    }
+
+    if (!state.user) {
+      const acceptedFor = p.aceptacionActiva?.ahijadoNombreCompleto || "Ninguno";
+      await openModal({
+        title: fullName(p),
+        bodyHTML: `
+          <div class="notice">
+            <b>Estado:</b> ${escapeHtml(stateLabel(p.estadoPadrino))}<br>
+            <b>Ahijado:</b> ${escapeHtml(acceptedFor)}
+          </div>
+        `,
+        okText: "Cerrar",
+      });
       return;
     }
 
@@ -781,6 +881,14 @@ ${renderCuestionario(p)}
     const n = Number(x ?? 0);
     return Number.isFinite(n) ? n : 0;
   }
+
+  function fullName(person) {
+    return `${person?.nombre || ""} ${person?.apellidoP || ""} ${person?.apellidoM || ""}`.trim() || "Padrino";
+  }
+
+  function stateLabel(value) {
+    return value === "disponible" ? "Disponible" : value === "reservado" ? "Reservado" : "No disponible";
+  }
 }
 
 function renderRegistro() {
@@ -807,7 +915,7 @@ function renderRegistro() {
       <div class="hr"></div>
 
       <div class="field">
-        <label>Contraseña global (pass_cursos)</label>
+        <label>Contraseña global (La contraseña de registro)</label>
         <input id="regPass" type="password" placeholder="Ingresa la contraseña...">
       </div>
 
@@ -1426,6 +1534,248 @@ ${renderCuestionario(p)}
   }
 }
 
+async function loadOfficialData(){
+  const data = await adminListOfficialData();
+  const padrinosById = new Map(data.padrinos.map((p) => [p.id, p]));
+  const rows = data.ahijados.map((ahijado) => {
+    const reservas = Array.isArray(ahijado.reservasActivas) ? ahijado.reservasActivas : [];
+    const reservados = reservas.map((reserva) => ({
+      padrino: padrinosById.get(reserva.padrinoId),
+      reserva,
+    })).filter((item) => item.padrino);
+    const aceptados = Array.isArray(ahijado.padrinosAceptados)
+      ? ahijado.padrinosAceptados.map((item) => ({
+        padrino: padrinosById.get(item.padrinoId),
+        aceptacion: item,
+      })).filter((item) => item.padrino)
+      : [];
+    if (!reservados.length && !aceptados.length) return null;
+    return { ahijado, reservados, aceptados };
+  });
+  return { ...data, rows: rows.filter(Boolean) };
+}
+
+function personName(person){
+  return person?.nombreCompleto ||
+    `${person?.nombre || ""} ${person?.apellidoP || ""} ${person?.apellidoM || ""}`.trim() ||
+    "Sin nombre";
+}
+
+function formatExpiry(timestamp){
+  if (!timestamp?.toDate) return "sin hora";
+  return timestamp.toDate().toLocaleString("es-MX");
+}
+
+async function renderEstadisticas(){
+  setView(`
+    <div>
+      <div class="kicker">Resumen</div>
+      <div class="headline">Estadísticas</div>
+      <div class="subtle">Estado general de las relaciones aceptadas.</div>
+      <div class="hr"></div>
+      <div id="statsContent"><div class="notice">Cargando estadísticas…</div></div>
+      <div class="hr"></div>
+      <button class="btn btn--primary" id="statsHome">Ver padrinos</button>
+    </div>
+  `);
+  $("statsHome").onclick = () => nav("/buscador");
+
+  try {
+    const padrinos = await queryPadrinos();
+    let ahijadosRegistrados = null;
+    let ahijadosPendientes = null;
+    if (state.user) {
+      const { ahijados } = await adminListOfficialData();
+      ahijadosRegistrados = ahijados.length;
+      ahijadosPendientes = ahijados.filter((ahijado) => Array.isArray(ahijado.reservasActivas) && ahijado.reservasActivas.length > 0).length;
+    }
+    const padrinosAceptados = padrinos.filter((padrino) => !!padrino.aceptacionActiva);
+    $("statsContent").innerHTML = `
+      <div class="stats-grid">
+        <div class="stat-card"><strong>${ahijadosRegistrados ?? "—"}</strong><span>Ahijados registrados</span></div>
+        <div class="stat-card"><strong>${padrinosAceptados.length}</strong><span>Ahijados con padrino aceptado</span></div>
+        <div class="stat-card"><strong>${ahijadosPendientes ?? "—"}</strong><span>Ahijados con reserva pendiente</span></div>
+        <div class="stat-card"><strong>${padrinosAceptados.length}</strong><span>Padrinos aceptados</span></div>
+      </div>
+    `;
+  } catch (error) {
+    $("statsContent").innerHTML = "";
+    toastInline($("statsContent"), error.message || "No se pudieron cargar las estadísticas.", "danger");
+  }
+}
+
+async function renderAhijados(){
+  setView(`
+    <div>
+      <div class="kicker">Lista de ahijados</div>
+      <div class="headline">Ahijados registrados</div>
+      <div class="subtle">Consulta si cada ahijado ya tiene un padrino aceptado.</div>
+      <div class="hr"></div>
+      <div id="ahijadosMsg"><div class="notice">Cargando ahijados…</div></div>
+      <div id="ahijadosList" class="ahijados-list"></div>
+      <div class="hr"></div>
+      <button class="btn btn--primary" id="ahijadosHome">Ver padrinos</button>
+    </div>
+  `);
+  $("ahijadosHome").onclick = () => nav("/buscador");
+
+  try {
+    const ahijados = await adminListUsersByRole("ahijado");
+    const list = $("ahijadosList");
+    $("ahijadosMsg").innerHTML = "";
+    if (!ahijados.length) {
+      list.innerHTML = `<div class="notice">No hay ahijados registrados.</div>`;
+      return;
+    }
+    list.innerHTML = ahijados.map((ahijado) => {
+      const accepted = Array.isArray(ahijado.padrinosAceptados)
+        ? ahijado.padrinosAceptados
+        : [];
+      const name = personName(ahijado);
+      const padrino = accepted.map((item) => item.padrinoNombreCompleto).filter(Boolean).join(", ");
+      return `
+        <article class="ahijado-row">
+          <strong>${escapeHtml(name)}</strong>
+          <span>${padrino ? `Padrino aceptado: ${escapeHtml(padrino)}` : "Sin padrino aceptado"}</span>
+        </article>
+      `;
+    }).join("");
+  } catch (error) {
+    $("ahijadosMsg").innerHTML = "";
+    toastInline($("ahijadosMsg"), error.message || "No se pudo cargar la lista de ahijados.", "danger");
+  }
+}
+
+async function renderAdminOfficial(){
+  if (!state.profile?.admin) {
+    setView(`<div class="notice">Acceso restringido. No eres admin.</div>`);
+    return;
+  }
+
+  setView(`
+    <div>
+      <div class="kicker">Admin</div>
+      <div class="headline">Lista oficial de ahijados</div>
+      <div class="subtle">Las reservas son temporales. “Reservado” no equivale a aceptación definitiva.</div>
+      <div class="hr"></div>
+      <div id="officialMsg"><div class="notice">Cargando lista oficial…</div></div>
+      <div id="officialList" class="official-list"></div>
+      <div class="hr"></div>
+      <button class="btn btn--ghost" id="officialBack">Volver al admin</button>
+      <button class="btn btn--primary" id="officialPdf">Descargar PDF</button>
+    </div>
+  `);
+
+  $("officialBack").onclick = () => nav("/admin");
+  $("officialPdf").onclick = downloadOfficialPdf;
+
+  try {
+    const data = await loadOfficialData();
+    $("officialMsg").innerHTML = "";
+    const list = $("officialList");
+    if (!data.rows.length) {
+      list.innerHTML = `<div class="notice">No hay ahijados registrados.</div>`;
+      return;
+    }
+    list.innerHTML = data.rows.map(({ ahijado, reservados, aceptados }) => `
+      <article class="official-row">
+        <h3>${escapeHtml(personName(ahijado))}</h3>
+        <div class="official-columns">
+          <div>
+            <b>Padrinos aceptados</b>
+            <p>${aceptados.length
+              ? aceptados.map(({ padrino }) => `<span>${escapeHtml(personName(padrino))} <button class="btn btn--danger official-delete" data-ahijado="${ahijado.id}" data-padrino="${padrino.id}">Eliminar</button></span>`).join("<br>")
+              : "Ninguno"}</p>
+          </div>
+          <div>
+            <b>Reservas pendientes</b>
+            <p>${reservados.length
+              ? reservados.map(({ padrino, reserva }) => `<span>${escapeHtml(personName(padrino))} · vence ${escapeHtml(formatExpiry(reserva.expiresAt))} <button class="btn btn--primary official-accept" data-ahijado="${ahijado.id}" data-padrino="${padrino.id}">Aceptar</button></span>`).join("<br>")
+              : "Ninguno"}</p>
+          </div>
+        </div>
+      </article>
+    `).join("");
+    list.querySelectorAll(".official-accept").forEach((button) => {
+      button.onclick = async () => {
+        button.disabled = true;
+        try {
+          await adminAcceptReservation({ ahijadoId: button.dataset.ahijado, padrinoId: button.dataset.padrino });
+          await renderAdminOfficial();
+        } catch (error) {
+          button.disabled = false;
+          toastInline($("officialMsg"), error.message || "No se pudo aceptar la reserva.", "danger");
+        }
+      };
+    });
+    list.querySelectorAll(".official-delete").forEach((button) => {
+      button.onclick = async () => {
+        const ok = await openModal({
+          title: "Eliminar aceptación",
+          bodyHTML: `<div class="notice">La relación se eliminará y el padrino volverá a estar disponible.</div>`,
+          okText: "Eliminar",
+          cancelText: "Cancelar",
+        });
+        if (!ok) return;
+        button.disabled = true;
+        try {
+          await adminDeleteAcceptance({ ahijadoId: button.dataset.ahijado, padrinoId: button.dataset.padrino });
+          await renderAdminOfficial();
+        } catch (error) {
+          button.disabled = false;
+          toastInline($("officialMsg"), error.message || "No se pudo eliminar la aceptación.", "danger");
+        }
+      };
+    });
+  } catch (error) {
+    $("officialMsg").innerHTML = "";
+    toastInline($("officialMsg"), error.message || "No se pudo cargar la lista oficial.", "danger");
+  }
+}
+
+async function downloadOfficialPdf(){
+  try {
+    const data = await loadOfficialData();
+    const pdf = new jsPDF({ unit: "mm", format: "a4" });
+    const margin = 14;
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    let y = 18;
+
+    pdf.setFontSize(16);
+    pdf.text("Bautizo - Lista oficial", margin, y);
+    y += 8;
+    pdf.setFontSize(9);
+    pdf.text(`Generado: ${new Date().toLocaleString("es-MX")}`, margin, y);
+    y += 8;
+
+    const writeLine = (text, options = {}) => {
+      const lines = pdf.splitTextToSize(text, pageWidth - margin * 2);
+      if (y + lines.length * 5 > 280) {
+        pdf.addPage();
+        y = 18;
+      }
+      pdf.setFontSize(options.size || 9);
+      if (options.bold) pdf.setFont(undefined, "bold");
+      pdf.text(lines, margin, y);
+      pdf.setFont(undefined, "normal");
+      y += lines.length * 5 + (options.gap || 2);
+    };
+
+    writeLine("Nota: las reservas pendientes son temporales. Solo las relaciones aceptadas forman parte de la lista oficial.", { size: 8, gap: 5 });
+    for (const { ahijado, reservados, aceptados } of data.rows) {
+      writeLine(`Ahijado: ${personName(ahijado)}`, { size: 11, bold: true, gap: 1 });
+        writeLine(`Aceptados: ${aceptados.length ? aceptados.map(({ padrino }) => personName(padrino)).join(", ") : "Ninguno"}`);
+      writeLine(`Reservas pendientes: ${reservados.length ? reservados.map(({ padrino }) => personName(padrino)).join(", ") : "Ninguna"}`);
+      y += 3;
+    }
+    if (!data.rows.length) writeLine("No hay ahijados registrados.");
+
+    pdf.save("lista-oficial-bautizo.pdf");
+  } catch (error) {
+    alert(error.message || "No se pudo generar el PDF.");
+  }
+}
+
 function renderAdmin() {
   if (!state.profile?.admin) {
     setView(`<div class="notice">Acceso restringido. No eres admin.</div>`);
@@ -1460,11 +1810,17 @@ function renderAdmin() {
       <div id="admMsg" style="margin-top:12px;"></div>
 
       <div class="hr"></div>
+      <div class="tagrow" style="margin-bottom:14px;">
+        <button class="btn btn--primary" id="admOfficial">Lista oficial</button>
+        <button class="btn btn--ghost" id="admPdf">Descargar PDF</button>
+      </div>
       <button class="btn btn--ghost" id="admBack">Volver</button>
     </div>
   `);
 
   $("admBack").onclick = () => nav("/buscador");
+  $("admOfficial").onclick = () => nav("/admin-oficial");
+  $("admPdf").onclick = downloadOfficialPdf;
   $("admRole").addEventListener("change", load);
   $("admQ").addEventListener("input", render);
 
@@ -1485,6 +1841,7 @@ function renderAdmin() {
   $("admList").innerHTML = "";
   toastInline($("admMsg"), "No se pudo cargar admin: " + (e?.message || e), "danger");
 }
+
 
   }
 

@@ -1,0 +1,87 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return signedIn()
+        && get(/databases/$(database)/documents/user_bautizo/$(request.auth.uid)).data.admin == true;
+    }
+
+    function isOwner(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    match /user_bautizo/{uid} {
+      allow get: if signedIn();
+
+      // Visitantes y usuarios autenticados pueden listar únicamente padrinos.
+      allow list: if resource.data.rol == "padrino";
+      // La lista de ahijados es pública y de solo lectura.
+      allow list: if resource.data.rol == "ahijado";
+      allow list: if isAdmin();
+
+      allow create: if isOwner(uid)
+        && request.resource.data.admin == false;
+
+      allow update: if isAdmin()
+        || ownerUpdate(uid)
+        || reservationUpdate(uid)
+        || padrinoAcceptanceUpdate(uid)
+        || expiredReservationCleanup(uid);
+
+      allow delete: if false;
+    }
+
+    function ownerUpdate(uid) {
+      return isOwner(uid)
+        && request.resource.data.admin == resource.data.admin;
+    }
+
+    function reservationUpdate(uid) {
+      return signedIn()
+        && request.auth.uid != uid
+        && resource.data.rol == "padrino"
+        && resource.data.estadoPadrino == "disponible"
+        && request.resource.data.estadoPadrino == "reservado"
+        && request.resource.data.reservaActiva.ahijadoId == request.auth.uid
+        && request.resource.data.reservaActiva.expiresAt is timestamp
+        && request.resource.data.reservaActiva.expiresAt > request.time
+        && request.resource.data.reservaActiva.expiresAt <= request.time + duration.value(30, "m");
+    }
+
+    function expiredReservationCleanup(uid) {
+      return signedIn()
+        && resource.data.rol == "padrino"
+        && resource.data.estadoPadrino == "reservado"
+        && resource.data.reservaActiva.expiresAt is timestamp
+        && request.time >= resource.data.reservaActiva.expiresAt
+        && (isOwner(uid) || resource.data.reservaActiva.ahijadoId == request.auth.uid)
+        && request.resource.data.estadoPadrino == "disponible"
+        && request.resource.data.reservaActiva == null;
+    }
+
+    function padrinoAcceptanceUpdate(uid) {
+      return signedIn()
+        && request.auth.uid != uid
+        && resource.data.rol == "ahijado"
+        && get(/databases/$(database)/documents/user_bautizo/$(request.auth.uid)).data.rol == "padrino"
+        && get(/databases/$(database)/documents/user_bautizo/$(request.auth.uid)).data.reservaActiva.ahijadoId == uid
+        && request.resource.data.reservasActivas.size() < resource.data.reservasActivas.size()
+        && request.resource.data.padrinosAceptados.size() > (
+          resource.data.keys().hasAny(["padrinosAceptados"])
+            ? resource.data.padrinosAceptados.size()
+            : 0
+        );
+    }
+
+    match /pass_cursos/{docId} {
+      allow get: if signedIn();
+      allow list: if false;
+      allow write: if isAdmin();
+    }
+  }
+}

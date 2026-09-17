@@ -33,11 +33,12 @@ export function setHeaderList(items, title){
   }
 }
 
-export function setFabVisibility({showDock, showAdmin, showRegister, showMe}){
+export function setFabVisibility({showDock, showAdmin, showRegister, showMe, showAhijados}){
   $("fabDock").classList.toggle("hidden", !showDock);
   $("fabAdmin").classList.toggle("hidden", !showAdmin);
   $("fabRegister").classList.toggle("hidden", !showRegister);
   $("fabMe").classList.toggle("hidden", !showMe);
+  $("fabAhijados").classList.toggle("hidden", !showAhijados);
 }
 
 export function setView(html){

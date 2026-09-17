@@ -22,6 +22,7 @@
     </div>
 
     <div class="topbar__right">
+      <button id="btnHome" class="btn btn--ghost" type="button" title="Inicio">Inicio</button>
       <button id="btnLogin" class="btn btn--ghost">Entrar con Google</button>
       <button id="btnLogout" class="btn btn--ghost hidden">Salir</button>
     </div>
@@ -42,6 +43,9 @@
           <div id="headerList" class="headerlist">
             <div class="headerlist__empty subtle">—</div>
           </div>
+          <button id="btnAcceptReservation" class="btn btn--primary hidden" type="button">
+            Aceptar reserva
+          </button>
         </div>
       </div>
     </section>
@@ -49,6 +53,8 @@
     <!-- Router outlet -->
     <section id="view" class="panel panel--main"></section>
   </main>
+
+  <button id="btnStatsFloating" class="stats-floating" type="button" title="Ver estadísticas">📊</button>
 
   <!-- Floating action buttons -->
   <div id="fabDock" class="fab-dock hidden">
@@ -60,6 +66,9 @@
     </button>
     <button id="fabMe" class="fab hidden" title="Mi perfil">
       <span class="fab__icon">👤</span>
+    </button>
+    <button id="fabAhijados" class="fab hidden" title="Lista de ahijados">
+      <span class="fab__icon">👥</span>
     </button>
   </div>
 

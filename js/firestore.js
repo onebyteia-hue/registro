@@ -222,6 +222,138 @@ export async function adminListUsersByRole(role){
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 
+export async function adminListOfficialData(){
+  const [ahijados, padrinos] = await Promise.all([
+    adminListUsersByRole("ahijado"),
+    adminListUsersByRole("padrino"),
+  ]);
+  return { ahijados, padrinos };
+}
+
+export async function adminAcceptReservation({ ahijadoId, padrinoId }){
+  await runTransaction(db, async (tx) => {
+    const ahijadoRef = userDocRef(ahijadoId);
+    const padrinoRef = userDocRef(padrinoId);
+    const [ahijadoSnap, padrinoSnap] = await Promise.all([
+      tx.get(ahijadoRef),
+      tx.get(padrinoRef),
+    ]);
+    if (!ahijadoSnap.exists() || !padrinoSnap.exists()) throw new Error("Participante no encontrado.");
+
+    const ahijado = ahijadoSnap.data();
+    const padrino = padrinoSnap.data();
+    const reserva = (ahijado.reservasActivas || []).find((item) => item?.padrinoId === padrinoId);
+    if (!reserva || padrino.reservaActiva?.ahijadoId !== ahijadoId) {
+      throw new Error("La reserva ya no está vigente.");
+    }
+
+    const aceptados = Array.isArray(ahijado.padrinosAceptados) ? ahijado.padrinosAceptados : [];
+    if (aceptados.some((item) => item?.padrinoId === padrinoId)) return;
+    const acceptedAt = Timestamp.now();
+
+    tx.update(ahijadoRef, {
+      reservasActivas: (ahijado.reservasActivas || []).filter((item) => item?.padrinoId !== padrinoId),
+      padrinosAceptados: [
+        ...aceptados,
+        {
+          padrinoId,
+          padrinoNombreCompleto: padrino.nombreCompleto || `${padrino.nombre || ""} ${padrino.apellidoP || ""} ${padrino.apellidoM || ""}`.trim(),
+          aceptadoAt: acceptedAt,
+        },
+      ],
+      updatedAt: serverTimestamp(),
+    });
+    tx.update(padrinoRef, {
+      estadoPadrino: "no_disponible",
+      reservaActiva: null,
+      aceptacionActiva: {
+        ahijadoId,
+        ahijadoNombreCompleto: ahijado.nombreCompleto || `${ahijado.nombre || ""} ${ahijado.apellidoP || ""} ${ahijado.apellidoM || ""}`.trim(),
+        aceptadoAt: acceptedAt,
+      },
+      updatedAt: serverTimestamp(),
+    });
+  });
+}
+
+export async function adminDeleteAcceptance({ ahijadoId, padrinoId }){
+  await runTransaction(db, async (tx) => {
+    const ahijadoRef = userDocRef(ahijadoId);
+    const padrinoRef = userDocRef(padrinoId);
+    const [ahijadoSnap, padrinoSnap] = await Promise.all([
+      tx.get(ahijadoRef),
+      tx.get(padrinoRef),
+    ]);
+    if (!ahijadoSnap.exists() || !padrinoSnap.exists()) throw new Error("Participante no encontrado.");
+
+    const ahijado = ahijadoSnap.data();
+    const padrino = padrinoSnap.data();
+    const aceptados = Array.isArray(ahijado.padrinosAceptados) ? ahijado.padrinosAceptados : [];
+    if (!aceptados.some((item) => item?.padrinoId === padrinoId)) {
+      throw new Error("La aceptación no existe.");
+    }
+
+    tx.update(ahijadoRef, {
+      padrinosAceptados: aceptados.filter((item) => item?.padrinoId !== padrinoId),
+      updatedAt: serverTimestamp(),
+    });
+    tx.update(padrinoRef, {
+      estadoPadrino: "disponible",
+      aceptacionActiva: null,
+      updatedAt: serverTimestamp(),
+    });
+  });
+}
+
+export async function acceptPadrinoReservation({ padrinoId }){
+  await runTransaction(db, async (tx) => {
+    const padrinoRef = userDocRef(padrinoId);
+    const padrinoSnap = await tx.get(padrinoRef);
+    if (!padrinoSnap.exists()) throw new Error("Padrino no encontrado.");
+
+    const padrino = padrinoSnap.data();
+    const reserva = padrino.reservaActiva;
+    if (padrino.rol !== "padrino" || padrino.estadoPadrino !== "reservado" || !reserva?.ahijadoId) {
+      throw new Error("No tienes una reserva pendiente para aceptar.");
+    }
+
+    const ahijadoRef = userDocRef(reserva.ahijadoId);
+    const ahijadoSnap = await tx.get(ahijadoRef);
+    if (!ahijadoSnap.exists()) throw new Error("Ahijado no encontrado.");
+
+    const ahijado = ahijadoSnap.data();
+    const reservaActiva = (ahijado.reservasActivas || []).find((item) => item?.padrinoId === padrinoId);
+    if (!reservaActiva) throw new Error("La reserva ya no está vigente.");
+
+    const aceptados = Array.isArray(ahijado.padrinosAceptados) ? ahijado.padrinosAceptados : [];
+    if (aceptados.some((item) => item?.padrinoId === padrinoId)) return;
+    const acceptedAt = Timestamp.now();
+
+    tx.update(ahijadoRef, {
+      reservasActivas: (ahijado.reservasActivas || []).filter((item) => item?.padrinoId !== padrinoId),
+      padrinosAceptados: [
+        ...aceptados,
+        {
+          padrinoId,
+          padrinoNombreCompleto: padrino.nombreCompleto || `${padrino.nombre || ""} ${padrino.apellidoP || ""} ${padrino.apellidoM || ""}`.trim(),
+          aceptadoAt: acceptedAt,
+        },
+      ],
+      updatedAt: serverTimestamp(),
+    });
+    tx.update(padrinoRef, {
+      estadoPadrino: "no_disponible",
+      reservaActiva: null,
+      aceptacionActiva: {
+        ahijadoId: reserva.ahijadoId,
+        ahijadoNombreCompleto: reserva.ahijadoNombreCompleto,
+        aceptadoAt: acceptedAt,
+      },
+      updatedAt: serverTimestamp(),
+    });
+  });
+}
+
 // ✅ Admin: PADRINO → no_disponible (cancela reserva si existía)
 export async function adminSetPadrinoNoDisponible({ padrinoId }){
   const padrRef = userDocRef(padrinoId);
