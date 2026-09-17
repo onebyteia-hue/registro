@@ -18,10 +18,9 @@ service cloud.firestore {
     match /user_bautizo/{uid} {
       allow get: if signedIn();
 
-      // Visitantes y usuarios autenticados pueden listar únicamente padrinos.
-      allow list: if resource.data.rol == "padrino";
-      // La lista de ahijados es pública y de solo lectura.
-      allow list: if resource.data.rol == "ahijado";
+      // Solo usuarios autenticados pueden consultar listados.
+      allow list: if signedIn() && resource.data.rol == "padrino";
+      allow list: if signedIn() && resource.data.rol == "ahijado";
       allow list: if isAdmin();
 
       allow create: if isOwner(uid)
@@ -33,7 +32,8 @@ service cloud.firestore {
         || padrinoAcceptanceUpdate(uid)
         || expiredReservationCleanup(uid);
 
-      allow delete: if false;
+      allow delete: if isAdmin()
+        && resource.data.admin != true;
     }
 
     function ownerUpdate(uid) {

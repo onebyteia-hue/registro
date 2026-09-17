@@ -34,6 +34,7 @@ import {
   adminSetPadrinoDisponible,
   adminSetAhijadoNoDisponible,
   adminSetAhijadoDisponible,
+  adminDeleteUser,
   adminListOfficialData,
   adminAcceptReservation,
   acceptPadrinoReservation,
@@ -85,25 +86,13 @@ function route() {
   const hash = hashPath || "/";
   const query = new URLSearchParams(hashQs || "");
 
-  if (!state.user && hash === "/buscador") {
-    renderBuscador(true);
-    return;
-  }
-  if (!state.user && hash === "/estadisticas") {
-    renderEstadisticas(true);
-    return;
-  }
-  if (!state.user && hash === "/ahijados") {
-    renderAhijados(true);
-    return;
-  }
   if (!state.user) {
     setFabVisibility({
       showDock: false,
       showAdmin: false,
       showRegister: false,
       showMe: false,
-      showAhijados: true,
+      showAhijados: false,
     });
     renderWelcome();
     return;
@@ -170,6 +159,9 @@ function route() {
     case "/admin-oficial":
       renderAdminOfficial();
       break;
+    case "/admin-eliminar":
+      renderAdminDelete();
+      break;
     default:
       nav("/buscador");
   }
@@ -195,6 +187,7 @@ onAuth(async (user) => {
   setUser(user || null);
   setTopAuthUI(!!user);
   $("btnLogin").classList.toggle("hidden", !!user);
+  $("btnStatsFloating").classList.toggle("hidden", !user);
 
   if (!user) {
     clearProfile();
@@ -395,10 +388,6 @@ async function showRulesModalIfNeeded() {
 function renderWelcome() {
   setView(`
     <div class="grid">
-      <div class="notice" style="grid-column:span 12;">
-        Puedes consultar las tarjetas de padrinos y las estadísticas sin registrarte.
-        <button id="btnGuestBrowse" class="btn btn--primary" type="button">Ver padrinos</button>
-      </div>
       <div class="card" style="grid-column: span 12; cursor: default;">
         <img class="card__img" alt="" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Crect width='120' height='120' rx='24' fill='rgba(255,255,255,0.12)'/%3E%3C/svg%3E"/>
         <div class="card__meta">
@@ -413,7 +402,6 @@ function renderWelcome() {
       </div>
     </div>
   `);
-  $("btnGuestBrowse").onclick = () => nav("/buscador");
 }
 
 function renderLoading(text) {
@@ -457,6 +445,11 @@ function renderIngreso() {
         </div>
       </div>
 
+      <div id="ahijadoPasswordField" class="field hidden" style="margin-top:12px;">
+        <label>Contraseña de registro como ahijado</label>
+        <input id="inAhijadoPassword" type="password" placeholder="Ingresa la contraseña">
+      </div>
+
       <div class="hr"></div>
 
       <button id="btnGuardarIngreso" class="btn btn--primary">Aceptar</button>
@@ -470,6 +463,14 @@ function renderIngreso() {
   $("inApP").value = p.apellidoP || "";
   $("inApM").value = p.apellidoM || "";
   $("inRol").value = p.rol || "";
+
+  const updateAhijadoPasswordVisibility = () => {
+    const isAhijado = $("inRol").value === "ahijado";
+    $("ahijadoPasswordField").classList.toggle("hidden", !isAhijado);
+    if (!isAhijado) $("inAhijadoPassword").value = "";
+  };
+  $("inRol").addEventListener("change", updateAhijadoPasswordVisibility);
+  updateAhijadoPasswordVisibility();
 
   $("btnGuardarIngreso").addEventListener("click", async () => {
     const msg = $("ingresoMsg");
@@ -486,6 +487,11 @@ function renderIngreso() {
         "Completa nombre y tus dos apellidos, y selecciona rol.",
         "danger",
       );
+      return;
+    }
+
+    if (rol === "ahijado" && $("inAhijadoPassword").value !== "confraternizacion") {
+      toastInline(msg, "La contraseña para registrarse como ahijado es incorrecta.", "danger");
       return;
     }
 
@@ -1776,6 +1782,99 @@ async function downloadOfficialPdf(){
   }
 }
 
+function renderAdminDelete(){
+  if (!state.profile?.admin) {
+    setView(`<div class="notice">Acceso restringido. No eres admin.</div>`);
+    return;
+  }
+
+  setView(`
+    <div>
+      <div class="kicker">Administración</div>
+      <div class="headline">Eliminar usuarios</div>
+      <div class="subtle">Esta acción es permanente y limpia sus reservas o aceptaciones relacionadas.</div>
+      <div class="hr"></div>
+      <div class="fieldrow">
+        <div class="field">
+          <label>Tipo de usuario</label>
+          <select id="deleteRole">
+            <option value="padrino">Padrinos</option>
+            <option value="ahijado">Ahijados</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Buscar</label>
+          <input id="deleteSearch" placeholder="Nombre…">
+        </div>
+      </div>
+      <div class="hr"></div>
+      <div id="deleteMsg"></div>
+      <div id="deleteList" class="grid"></div>
+      <div class="hr"></div>
+      <button class="btn btn--ghost" id="deleteBack">Volver al admin</button>
+    </div>
+  `);
+
+  const list = $("deleteList");
+  const msg = $("deleteMsg");
+  let users = [];
+
+  $("deleteBack").onclick = () => nav("/admin");
+  $("deleteRole").onchange = load;
+  $("deleteSearch").oninput = render;
+
+  async function load(){
+    list.innerHTML = `<div class="notice" style="grid-column:span 12;">Cargando…</div>`;
+    try {
+      users = await adminListUsersByRole($("deleteRole").value);
+      render();
+    } catch (error) {
+      list.innerHTML = "";
+      toastInline(msg, error.message || "No se pudo cargar la lista.", "danger");
+    }
+  }
+
+  function render(){
+    const search = $("deleteSearch").value.trim().toLowerCase();
+    const filtered = users.filter((user) => personName(user).toLowerCase().includes(search));
+    if (!filtered.length) {
+      list.innerHTML = `<div class="notice" style="grid-column:span 12;">Sin resultados.</div>`;
+      return;
+    }
+    list.innerHTML = filtered.map((user) => `
+      <article class="delete-user-row">
+        <div>
+          <strong>${escapeHtml(personName(user))}</strong>
+          <div class="subtle">${escapeHtml(user.rol === "padrino" ? user.estadoPadrino || "padrino" : user.estadoApadrinado || "ahijado")}</div>
+        </div>
+        <button class="btn btn--danger delete-user" data-uid="${user.id}" data-name="${escapeHtml(personName(user))}">Eliminar</button>
+      </article>
+    `).join("");
+
+    list.querySelectorAll(".delete-user").forEach((button) => {
+      button.onclick = async () => {
+        const ok = await openModal({
+          title: "Eliminar usuario",
+          bodyHTML: `<div class="notice">Se eliminará permanentemente a <b>${button.dataset.name}</b> y se limpiarán sus relaciones.</div>`,
+          okText: "Eliminar definitivamente",
+          cancelText: "Cancelar",
+        });
+        if (!ok) return;
+        button.disabled = true;
+        try {
+          await adminDeleteUser({ uid: button.dataset.uid });
+          await load();
+        } catch (error) {
+          button.disabled = false;
+          toastInline(msg, error.message || "No se pudo eliminar el usuario.", "danger");
+        }
+      };
+    });
+  }
+
+  load();
+}
+
 function renderAdmin() {
   if (!state.profile?.admin) {
     setView(`<div class="notice">Acceso restringido. No eres admin.</div>`);
@@ -1813,6 +1912,7 @@ function renderAdmin() {
       <div class="tagrow" style="margin-bottom:14px;">
         <button class="btn btn--primary" id="admOfficial">Lista oficial</button>
         <button class="btn btn--ghost" id="admPdf">Descargar PDF</button>
+        <button class="btn btn--danger" id="admDeleteUsers">Eliminar usuarios</button>
       </div>
       <button class="btn btn--ghost" id="admBack">Volver</button>
     </div>
@@ -1821,6 +1921,7 @@ function renderAdmin() {
   $("admBack").onclick = () => nav("/buscador");
   $("admOfficial").onclick = () => nav("/admin-oficial");
   $("admPdf").onclick = downloadOfficialPdf;
+  $("admDeleteUsers").onclick = () => nav("/admin-eliminar");
   $("admRole").addEventListener("change", load);
   $("admQ").addEventListener("input", render);
 

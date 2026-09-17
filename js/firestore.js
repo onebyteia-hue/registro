@@ -455,6 +455,51 @@ export async function adminSetAhijadoDisponible({ ahijadoId }){
   });
 }
 
+export async function adminDeleteUser({ uid }){
+  const targetRef = userDocRef(uid);
+  const targetSnap = await getDoc(targetRef);
+  if (!targetSnap.exists()) throw new Error("Usuario no encontrado.");
+  if (targetSnap.data().admin === true) throw new Error("No se puede eliminar un administrador.");
+
+  const [ahijados, padrinos] = await Promise.all([
+    adminListUsersByRole("ahijado"),
+    adminListUsersByRole("padrino"),
+  ]);
+  const batch = writeBatch(db);
+
+  for (const ahijado of ahijados) {
+    if (ahijado.id === uid) continue;
+    const reservas = Array.isArray(ahijado.reservasActivas) ? ahijado.reservasActivas : [];
+    const aceptados = Array.isArray(ahijado.padrinosAceptados) ? ahijado.padrinosAceptados : [];
+    const nextReservas = reservas.filter((item) => item?.padrinoId !== uid);
+    const nextAceptados = aceptados.filter((item) => item?.padrinoId !== uid);
+    if (nextReservas.length !== reservas.length || nextAceptados.length !== aceptados.length) {
+      batch.update(userDocRef(ahijado.id), {
+        reservasActivas: nextReservas,
+        padrinosAceptados: nextAceptados,
+        updatedAt: serverTimestamp(),
+      });
+    }
+  }
+
+  for (const padrino of padrinos) {
+    if (padrino.id === uid) continue;
+    const reservaPertenece = padrino.reservaActiva?.ahijadoId === uid;
+    const aceptacionPertenece = padrino.aceptacionActiva?.ahijadoId === uid;
+    if (reservaPertenece || aceptacionPertenece) {
+      batch.update(userDocRef(padrino.id), {
+        estadoPadrino: "disponible",
+        reservaActiva: null,
+        aceptacionActiva: null,
+        updatedAt: serverTimestamp(),
+      });
+    }
+  }
+
+  batch.delete(targetRef);
+  await batch.commit();
+}
+
 
 
 // export async function adminSetPadrinoNoDisponible({ padrinoId }){
