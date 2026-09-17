@@ -535,6 +535,9 @@ textarea{ min-height: 120px; resize: vertical; }
 
 .modal{
   width: min(580px, 100%);
+  max-height: 90vh;
+  display:flex;
+  flex-direction:column;
   border-radius: 24px;
   background: rgba(16,18,28,.72);
   border: 1px solid rgba(255,255,255,.14);
@@ -553,6 +556,8 @@ textarea{ min-height: 120px; resize: vertical; }
 .modal__title{ font-weight: 950; letter-spacing:-.02em; }
 .modal__body{
   padding: 14px;
+  overflow-y:auto;
+  min-height:0;
   color: rgba(255,255,255,.90);
   line-height: 1.6;
 }
@@ -562,6 +567,8 @@ textarea{ min-height: 120px; resize: vertical; }
   justify-content:flex-end;
   gap: 10px;
   border-top: 1px solid rgba(255,255,255,.10);
+  flex:0 0 auto;
+  background:rgba(16,18,28,.96);
 }
 
 /* ============================

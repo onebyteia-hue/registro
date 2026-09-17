@@ -558,6 +558,9 @@ margin: 10px auto;    /* ✅ margen vertical para que no se pegue */
 
 .modal{
   width: min(580px, 100%);
+  max-height: 90vh;
+  display:flex;
+  flex-direction:column;
   border-radius: 24px;
   background: rgba(255,255,255,.92);
   border: 1px solid rgba(18,20,26,.10);
@@ -576,6 +579,8 @@ margin: 10px auto;    /* ✅ margen vertical para que no se pegue */
 .modal__title{ font-weight: 950; letter-spacing:-.02em; }
 .modal__body{
   padding: 14px;
+  overflow-y:auto;
+  min-height:0;
   color: rgba(18,20,26,.90);
   line-height: 1.6;
 }
@@ -587,6 +592,8 @@ margin: 10px auto;    /* ✅ margen vertical para que no se pegue */
   border-top: 1px solid rgba(18,20,26,.10);
   position:relative;
   z-index:2;
+  flex:0 0 auto;
+  background:rgba(255,255,255,.96);
 }
 
 /* ============ Choice blocks ============ */
