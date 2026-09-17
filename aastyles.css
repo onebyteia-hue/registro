@@ -113,7 +113,7 @@ body{
   overflow:hidden;
 }
 .panel--header{ padding: 16px; }
-.panel--main{ padding: 16px; min-height: 62vh; }
+.panel--main{ padding: 16px 16px 120px; min-height: 62vh; }
 
 /* Header grid */
 .headergrid{

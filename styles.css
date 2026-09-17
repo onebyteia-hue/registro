@@ -114,7 +114,7 @@ body{
 }
 .panel--header{ padding: 16px; border-radius: var(--radius);}
 
-.panel--main{ padding: 22px; min-height: 62vh; border-radius: 0px; }
+.panel--main{ padding: 22px 22px 120px; min-height: 62vh; border-radius: 0px; }
 
 /* Header grid */
 .headergrid{
@@ -585,6 +585,8 @@ margin: 10px auto;    /* ✅ margen vertical para que no se pegue */
   justify-content:flex-end;
   gap: 10px;
   border-top: 1px solid rgba(18,20,26,.10);
+  position:relative;
+  z-index:2;
 }
 
 /* ============ Choice blocks ============ */
@@ -626,14 +628,6 @@ margin: 10px auto;    /* ✅ margen vertical para que no se pegue */
     min-height: min(560px, 72vh);
   }
 }
-/* ===== Botón flotante dentro del contenido del modal ===== */
-.rules-fab{
-  position: sticky;
-  bottom: 0;
-  padding-top: 10px;
-  padding-bottom: 10px;
-  background: linear-gradient(180deg, rgba(255,255,255,0) 0%, rgba(255,255,255,.95) 35%);
-}
 /* Fix Tinder mobile */
 .panel--main{
   display: flex;
@@ -653,7 +647,7 @@ margin: 10px auto;    /* ✅ margen vertical para que no se pegue */
 @media (max-width: 480px){
   .shell{ padding: 0 10px; }
 
-  .panel--main{ padding: 22px; }
+  .panel--main{ padding: 22px 22px 120px; }
 
   .card{
     margin: 12px auto;
